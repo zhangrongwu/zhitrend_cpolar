@@ -15,6 +15,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import aiohttp
 
 # 加载环境变量
 load_dotenv()
@@ -113,17 +114,39 @@ class ConnectionManager:
             await connection.send_text(message)
             
     def register_tunnel(self, client_id: str, local_port: int, public_port: int, custom_domain: str = None):
+        """注册一个新的隧道"""
+        logger.info(f"Registering new tunnel: client_id={client_id}, local_port={local_port}, public_port={public_port}, custom_domain={custom_domain}")
+        logger.info(f"Current tunnels before registration: {self.tunnels}")
+        
+        # 检查端口是否已被使用
+        for existing_id, tunnel in self.tunnels.items():
+            if tunnel["public_port"] == public_port:
+                logger.error(f"Public port {public_port} is already in use by tunnel {existing_id}")
+                raise ValueError(f"Public port {public_port} is already in use")
+        
+        # 创建新的隧道
         self.tunnels[client_id] = {
             "local_port": local_port,
             "public_port": public_port,
             "custom_domain": custom_domain,
             "created_at": datetime.now().isoformat()
         }
+        
         if custom_domain:
             self.domain_mappings[custom_domain] = client_id
             
+        logger.info(f"Tunnel registered successfully. Current tunnels: {self.tunnels}")
+        
     def get_tunnel_info(self, client_id: str):
-        return self.tunnels.get(client_id)
+        """获取隧道信息"""
+        tunnel = self.tunnels.get(client_id)
+        logger.info(f"Getting tunnel info for {client_id}: {tunnel}")
+        return tunnel
+
+    def list_tunnels(self):
+        """列出所有隧道"""
+        logger.info(f"Listing all tunnels: {self.tunnels}")
+        return self.tunnels
 
 manager = ConnectionManager()
 
@@ -294,58 +317,51 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 # API路由
 @app.get("/api/tunnels")
 async def list_tunnels(current_user: User = Depends(get_current_user)):
-    return manager.tunnels
+    """列出所有隧道"""
+    logger.info("Listing tunnels for user: %s", current_user.username)
+    tunnels = manager.list_tunnels()
+    logger.info("Current tunnels: %s", tunnels)
+    return tunnels
 
 @app.post("/api/tunnels")
 async def create_tunnel(
     request: Request,
     current_user: User = Depends(get_current_user)
 ):
+    """创建新隧道"""
     try:
         data = await request.json()
-        logger.info(f"Received tunnel creation request: {data}")
+        logger.info(f"Received tunnel creation request from {current_user.username}: {data}")
         
         # 检查必需字段
         if 'local_port' not in data or 'public_port' not in data:
             logger.error("Missing required fields in request")
             raise HTTPException(status_code=400, detail="Missing required fields: local_port and public_port are required")
         
-        local_port = data.get("local_port")
-        public_port = data.get("public_port")
+        try:
+            local_port = int(data.get("local_port"))
+            public_port = int(data.get("public_port"))
+        except (TypeError, ValueError) as e:
+            logger.error(f"Invalid port values: {e}")
+            raise HTTPException(status_code=400, detail="Port values must be valid integers")
+            
         custom_domain = data.get("custom_domain")
         
         # 验证端口值
-        if not isinstance(local_port, int) or not isinstance(public_port, int):
-            logger.error(f"Invalid port values: local_port={local_port}, public_port={public_port}")
-            raise HTTPException(status_code=400, detail="Port values must be integers")
-            
         if local_port < 1 or local_port > 65535 or public_port < 1 or public_port > 65535:
             logger.error(f"Port values out of range: local_port={local_port}, public_port={public_port}")
             raise HTTPException(status_code=400, detail="Port values must be between 1 and 65535")
-            
-        # 检查端口是否已被使用
-        for tunnel in manager.tunnels.values():
-            if tunnel["public_port"] == public_port:
-                logger.error(f"Public port {public_port} already in use")
-                raise HTTPException(status_code=400, detail=f"Public port {public_port} is already in use")
         
-        # 验证自定义域名
-        if custom_domain:
-            if not isinstance(custom_domain, str):
-                logger.error(f"Invalid domain type: {type(custom_domain)}")
-                raise HTTPException(status_code=400, detail="Custom domain must be a string")
-                
-            custom_domain = custom_domain.strip()
-            if not custom_domain:
-                custom_domain = None
-            elif custom_domain in manager.domain_mappings:
-                logger.error(f"Domain {custom_domain} already in use")
-                raise HTTPException(status_code=400, detail=f"Domain {custom_domain} is already in use")
-            
         # 创建隧道
         client_id = str(uuid.uuid4())
         logger.info(f"Creating new tunnel with ID {client_id}")
-        manager.register_tunnel(client_id, local_port, public_port, custom_domain)
+        
+        try:
+            manager.register_tunnel(client_id, local_port, public_port, custom_domain)
+            logger.info(f"Tunnel created successfully: {manager.tunnels[client_id]}")
+        except ValueError as e:
+            logger.error(f"Failed to create tunnel: {str(e)}")
+            raise HTTPException(status_code=400, detail=str(e))
         
         # 返回成功响应
         response_data = {
@@ -355,7 +371,7 @@ async def create_tunnel(
             "public_port": public_port,
             "custom_domain": custom_domain
         }
-        logger.info(f"Tunnel created successfully: {response_data}")
+        logger.info(f"Returning response: {response_data}")
         return response_data
         
     except json.JSONDecodeError as e:
@@ -377,6 +393,92 @@ async def delete_tunnel(
         del manager.tunnels[client_id]
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Tunnel not found")
+
+@app.api_route("/proxy/{port}{path:path}", methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH"])
+async def proxy_request(port: int, path: str, request: Request):
+    try:
+        logger.info(f"Received proxy request for port: {port}, path: {path}")
+        logger.info(f"Request headers: {dict(request.headers)}")
+        logger.info(f"Available tunnels: {manager.tunnels}")
+        
+        # 查找对应的隧道
+        tunnel = None
+        for client_id, tunnel_info in manager.tunnels.items():
+            logger.info(f"Checking tunnel: {client_id} -> {tunnel_info}")
+            if tunnel_info["public_port"] == port:
+                tunnel = tunnel_info
+                break
+        
+        if not tunnel:
+            logger.error(f"No tunnel found for port {port}")
+            raise HTTPException(status_code=404, detail=f"No tunnel found for port {port}")
+            
+        local_port = tunnel["local_port"]
+        logger.info(f"Found tunnel, forwarding to local port: {local_port}")
+        
+        # 检查本地服务是否可用
+        try:
+            async with aiohttp.ClientSession() as session:
+                check_url = f"http://localhost:{local_port}/"
+                async with session.get(check_url) as response:
+                    logger.info(f"Local service check response: {response.status}")
+        except Exception as e:
+            logger.error(f"Local service not available: {str(e)}")
+            raise HTTPException(status_code=502, detail=f"Local service not available: {str(e)}")
+        
+        # 构建目标URL
+        target_url = f"http://localhost:{local_port}{path}"
+        if request.url.query:
+            target_url += f"?{request.url.query}"
+            
+        logger.info(f"Forwarding request to: {target_url}")
+            
+        # 使用aiohttp发送请求
+        async with aiohttp.ClientSession() as session:
+            method = request.method
+            headers = dict(request.headers)
+            
+            # 移除可能导致问题的头部
+            headers.pop('host', None)
+            headers.pop('content-length', None)
+            headers.pop('connection', None)
+            headers.pop('keep-alive', None)
+            headers.pop('transfer-encoding', None)
+            
+            body = await request.body()
+            
+            logger.info(f"Sending {method} request to {target_url} with headers: {headers}")
+            try:
+                async with session.request(
+                    method=method,
+                    url=target_url,
+                    headers=headers,
+                    data=body if body else None,
+                    allow_redirects=True,
+                    timeout=aiohttp.ClientTimeout(total=10)
+                ) as response:
+                    content = await response.read()
+                    logger.info(f"Received response with status: {response.status}")
+                    return Response(
+                        content=content,
+                        status_code=response.status,
+                        headers=dict(response.headers)
+                    )
+            except aiohttp.ClientError as e:
+                error_msg = f"Failed to forward request: {str(e)}"
+                logger.error(error_msg)
+                raise HTTPException(status_code=502, detail=error_msg)
+            except asyncio.TimeoutError:
+                error_msg = "Request timed out"
+                logger.error(error_msg)
+                raise HTTPException(status_code=504, detail=error_msg)
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Proxy error: {str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
 if __name__ == "__main__":
     import uvicorn
