@@ -63,6 +63,30 @@ class UserLogin(BaseModel):
     username: str
     password: str
 
+# 用户数据存储
+def load_users():
+    try:
+        with open('users.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # 如果文件不存在，创建默认管理员账户
+        default_users = {
+            "admin": {
+                "username": "admin",
+                "hashed_password": get_password_hash("admin"),
+                "disabled": False
+            }
+        }
+        save_users(default_users)
+        return default_users
+
+def save_users(users):
+    with open('users.json', 'w') as f:
+        json.dump(users, f, indent=4)
+
+# 初始化用户数据
+users_db = load_users()
+
 # 连接管理
 class ConnectionManager:
     def __init__(self):
@@ -102,9 +126,6 @@ class ConnectionManager:
         return self.tunnels.get(client_id)
 
 manager = ConnectionManager()
-
-# 模拟数据库
-users_db = {}
 
 # 用户认证相关函数
 def get_user(username: str):
@@ -176,6 +197,7 @@ async def register(user: UserCreate):
         "hashed_password": hashed_password,
         "disabled": False
     }
+    save_users(users_db)  # 保存到文件
     return {"message": "User created successfully"}
 
 @app.post("/api/login", response_model=Token)
