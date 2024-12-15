@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录 - 内网穿透系统</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="min-h-screen flex items-center justify-center">
+        <div class="max-w-md w-full space-y-8 p-8 bg-white rounded-lg shadow">
+            <div>
+                <h2 class="mt-6 text-center text-3xl font-extrabold text-gray-900">
+                    登录账户
+                </h2>
+                <p class="mt-2 text-center text-sm text-gray-600">
+                    或者
+                    <button onclick="showRegister()" class="font-medium text-blue-600 hover:text-blue-500">
+                        注册新账户
+                    </button>
+                </p>
+            </div>
+            <form id="loginForm" class="mt-8 space-y-6">
+                <div class="rounded-md shadow-sm -space-y-px">
+                    <div>
+                        <label for="username" class="sr-only">用户名</label>
+                        <input id="username" name="username" type="text" required
+                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                            placeholder="用户名">
+                    </div>
+                    <div>
+                        <label for="password" class="sr-only">密码</label>
+                        <input id="password" name="password" type="password" required
+                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                            placeholder="密码">
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit"
+                        class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        登录
+                    </button>
+                </div>
+            </form>
+
+            <form id="registerForm" class="mt-8 space-y-6 hidden">
+                <div class="rounded-md shadow-sm -space-y-px">
+                    <div>
+                        <label for="reg-username" class="sr-only">用户名</label>
+                        <input id="reg-username" name="username" type="text" required
+                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                            placeholder="用户名">
+                    </div>
+                    <div>
+                        <label for="reg-password" class="sr-only">密码</label>
+                        <input id="reg-password" name="password" type="password" required
+                            class="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 focus:z-10 sm:text-sm"
+                            placeholder="密码">
+                    </div>
+                </div>
+
+                <div>
+                    <button type="submit"
+                        class="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                        注册
+                    </button>
+                </div>
+                <div class="text-center">
+                    <button type="button" onclick="showLogin()"
+                        class="text-sm text-blue-600 hover:text-blue-500">
+                        返回登录
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        function showRegister() {
+            document.getElementById('loginForm').classList.add('hidden');
+            document.getElementById('registerForm').classList.remove('hidden');
+        }
+
+        function showLogin() {
+            document.getElementById('registerForm').classList.add('hidden');
+            document.getElementById('loginForm').classList.remove('hidden');
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = {
+                username: document.getElementById('username').value,
+                password: document.getElementById('password').value
+            };
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Login response:', data);  // 调试日志
+                    // 保存完整的token字符串
+                    localStorage.setItem('token', data.access_token);
+                    // 直接跳转到管理页面
+                    window.location.href = '/admin';
+                } else {
+                    const error = await response.json();
+                    console.error('Login error:', error);  // 调试日志
+                    alert(error.detail || '登录失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('登录失败');
+            }
+        });
+
+        document.getElementById('registerForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = {
+                username: document.getElementById('reg-username').value,
+                password: document.getElementById('reg-password').value
+            };
+
+            try {
+                const response = await fetch('/api/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    alert('注册成功，请登录');
+                    showLogin();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || '注册失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('注册失败');
+            }
+        });
+    </script>
+</body>
+</html>

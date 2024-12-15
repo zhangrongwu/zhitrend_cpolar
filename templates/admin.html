@@ -8,8 +8,12 @@
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
-        <header class="mb-8">
+        <header class="mb-8 flex justify-between items-center">
             <h1 class="text-3xl font-bold text-gray-800">内网穿透管理面板</h1>
+            <div class="flex items-center space-x-4">
+                <span class="text-gray-600">欢迎, {{ username }}</span>
+                <button onclick="logout()" class="text-red-600 hover:text-red-900">退出登录</button>
+            </div>
         </header>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -113,6 +117,31 @@
     </div>
 
     <script>
+        // 检查登录状态
+        function checkAuth() {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                window.location.href = '/login';
+            }
+            return token;
+        }
+
+        // 添加认证头
+        function getAuthHeaders() {
+            const token = checkAuth();
+            return {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+                'accept': 'application/json'
+            };
+        }
+
+        // 退出登录
+        function logout() {
+            localStorage.removeItem('token');
+            window.location.href = '/login';
+        }
+
         // 创建新隧道
         document.getElementById('newTunnelForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -120,9 +149,7 @@
             try {
                 const response = await fetch('/api/tunnels', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: getAuthHeaders(),
                     body: JSON.stringify({
                         local_port: parseInt(formData.get('localPort')),
                         public_port: parseInt(formData.get('publicPort')),
@@ -132,7 +159,11 @@
                 if (response.ok) {
                     location.reload();
                 } else {
-                    alert('创建隧道失败');
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('创建隧道失败');
+                    }
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -146,12 +177,17 @@
             
             try {
                 const response = await fetch(`/api/tunnels/${clientId}`, {
-                    method: 'DELETE'
+                    method: 'DELETE',
+                    headers: getAuthHeaders()
                 });
                 if (response.ok) {
                     location.reload();
                 } else {
-                    alert('删除隧道失败');
+                    if (response.status === 401) {
+                        window.location.href = '/login';
+                    } else {
+                        alert('删除隧道失败');
+                    }
                 }
             } catch (error) {
                 console.error('Error:', error);
@@ -162,13 +198,22 @@
         // 定期更新状态
         setInterval(async () => {
             try {
-                const response = await fetch('/api/tunnels');
-                const tunnels = await response.json();
-                document.getElementById('activeTunnels').textContent = Object.keys(tunnels).length;
+                const response = await fetch('/api/tunnels', {
+                    headers: getAuthHeaders()
+                });
+                if (response.ok) {
+                    const tunnels = await response.json();
+                    document.getElementById('activeTunnels').textContent = Object.keys(tunnels).length;
+                } else if (response.status === 401) {
+                    window.location.href = '/login';
+                }
             } catch (error) {
                 console.error('Error updating status:', error);
             }
         }, 5000);
+
+        // 初始检查认证
+        checkAuth();
     </script>
 </body>
 </html>

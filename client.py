@@ -14,10 +14,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class TunnelClient:
-    def __init__(self, server_url, local_port, public_port):
+    def __init__(self, server_url, local_port, public_port, custom_domain=None):
         self.server_url = server_url
         self.local_port = local_port
         self.public_port = public_port
+        self.custom_domain = custom_domain
         self.websocket = None
         self.client_id = None
         self.running = False
@@ -48,7 +49,8 @@ class TunnelClient:
         request = {
             "type": "tunnel_request",
             "local_port": self.local_port,
-            "public_port": self.public_port
+            "public_port": self.public_port,
+            "custom_domain": self.custom_domain
         }
         await self.websocket.send(json.dumps(request))
         
@@ -105,8 +107,9 @@ async def main():
     server_url = os.getenv("SERVER_URL", "ws://localhost:8080")
     local_port = int(os.getenv("LOCAL_PORT", "8000"))
     public_port = int(os.getenv("PUBLIC_PORT", "8888"))
+    custom_domain = os.getenv("CUSTOM_DOMAIN")
     
-    client = TunnelClient(server_url, local_port, public_port)
+    client = TunnelClient(server_url, local_port, public_port, custom_domain)
     
     try:
         await client.start()
