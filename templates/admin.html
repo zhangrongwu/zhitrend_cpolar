@@ -38,15 +38,19 @@
                 <form id="tunnel-form" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">本地端口</label>
-                        <input type="number" id="local_port" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="number" id="local_port" name="local_port" required
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">公网端口</label>
-                        <input type="number" id="public_port" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="number" id="public_port" name="public_port" required
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">自定义域名 (可选)</label>
-                        <input type="text" id="custom_domain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="example.com">
+                        <input type="text" id="custom_domain" name="custom_domain"
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" 
+                            placeholder="example.com">
                     </div>
                     <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                         创建隧道
@@ -152,29 +156,49 @@
         // 创建新隧道
         async function createTunnel(event) {
             event.preventDefault();
+            
+            const localPort = document.getElementById('local_port').value;
+            const publicPort = document.getElementById('public_port').value;
+            const customDomain = document.getElementById('custom_domain').value;
+
+            // 验证必填字段
+            if (!localPort || !publicPort) {
+                alert('请填写本地端口和公网端口');
+                return;
+            }
+
             const formData = {
-                local_port: parseInt(document.getElementById('local_port').value),
-                public_port: parseInt(document.getElementById('public_port').value),
-                custom_domain: document.getElementById('custom_domain').value || null
+                local_port: parseInt(localPort),
+                public_port: parseInt(publicPort),
+                custom_domain: customDomain.trim() || null
             };
+
+            console.log('Creating tunnel with data:', formData);
 
             try {
                 const response = await fetch('/api/tunnels', {
                     method: 'POST',
-                    headers: headers,
+                    headers: {
+                        ...headers,
+                        'Accept': 'application/json'
+                    },
                     body: JSON.stringify(formData)
                 });
 
+                const responseData = await response.json();
+                console.log('Server response:', responseData);
+
                 if (response.ok) {
+                    console.log('Tunnel created successfully');
                     fetchTunnels();
                     document.getElementById('tunnel-form').reset();
                 } else {
-                    const error = await response.json();
-                    alert(error.detail || '创建隧道失败');
+                    console.error('Failed to create tunnel:', responseData);
+                    alert(responseData.detail || '创建隧道失败');
                 }
             } catch (error) {
-                console.error('Error:', error);
-                alert('创建隧道失败');
+                console.error('Error creating tunnel:', error);
+                alert('创建隧道失败: ' + error.message);
             }
         }
 

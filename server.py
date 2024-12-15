@@ -303,21 +303,70 @@ async def create_tunnel(
 ):
     try:
         data = await request.json()
+        logger.info(f"Received tunnel creation request: {data}")
+        
+        # 检查必需字段
+        if 'local_port' not in data or 'public_port' not in data:
+            logger.error("Missing required fields in request")
+            raise HTTPException(status_code=400, detail="Missing required fields: local_port and public_port are required")
+        
         local_port = data.get("local_port")
         public_port = data.get("public_port")
         custom_domain = data.get("custom_domain")
         
-        if not local_port or not public_port:
-            raise HTTPException(status_code=400, detail="Missing required fields")
-        
-        client_id = str(uuid.uuid4())
-        if custom_domain and custom_domain in manager.domain_mappings:
-            raise HTTPException(status_code=400, detail="Domain already in use")
+        # 验证端口值
+        if not isinstance(local_port, int) or not isinstance(public_port, int):
+            logger.error(f"Invalid port values: local_port={local_port}, public_port={public_port}")
+            raise HTTPException(status_code=400, detail="Port values must be integers")
             
+        if local_port < 1 or local_port > 65535 or public_port < 1 or public_port > 65535:
+            logger.error(f"Port values out of range: local_port={local_port}, public_port={public_port}")
+            raise HTTPException(status_code=400, detail="Port values must be between 1 and 65535")
+            
+        # 检查端口是否已被使用
+        for tunnel in manager.tunnels.values():
+            if tunnel["public_port"] == public_port:
+                logger.error(f"Public port {public_port} already in use")
+                raise HTTPException(status_code=400, detail=f"Public port {public_port} is already in use")
+        
+        # 验证自定义域名
+        if custom_domain:
+            if not isinstance(custom_domain, str):
+                logger.error(f"Invalid domain type: {type(custom_domain)}")
+                raise HTTPException(status_code=400, detail="Custom domain must be a string")
+                
+            custom_domain = custom_domain.strip()
+            if not custom_domain:
+                custom_domain = None
+            elif custom_domain in manager.domain_mappings:
+                logger.error(f"Domain {custom_domain} already in use")
+                raise HTTPException(status_code=400, detail=f"Domain {custom_domain} is already in use")
+            
+        # 创建隧道
+        client_id = str(uuid.uuid4())
+        logger.info(f"Creating new tunnel with ID {client_id}")
         manager.register_tunnel(client_id, local_port, public_port, custom_domain)
-        return {"client_id": client_id, "status": "success", "custom_domain": custom_domain}
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Invalid JSON")
+        
+        # 返回成功响应
+        response_data = {
+            "client_id": client_id,
+            "status": "success",
+            "local_port": local_port,
+            "public_port": public_port,
+            "custom_domain": custom_domain
+        }
+        logger.info(f"Tunnel created successfully: {response_data}")
+        return response_data
+        
+    except json.JSONDecodeError as e:
+        logger.error(f"Invalid JSON in request: {str(e)}")
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+    except ValueError as e:
+        logger.error(f"Value error in request: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Unexpected error creating tunnel: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/api/tunnels/{client_id}")
 async def delete_tunnel(
