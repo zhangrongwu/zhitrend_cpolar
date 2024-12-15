@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>内网穿透管理面板</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">内网穿透管理面板</h1>
+        </header>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- 状态概览 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4">系统状态</h2>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-blue-50 p-4 rounded">
+                        <p class="text-sm text-blue-600">活动连接</p>
+                        <p class="text-2xl font-bold text-blue-800" id="activeConnections">{{ active_connections }}</p>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded">
+                        <p class="text-sm text-green-600">活动隧道</p>
+                        <p class="text-2xl font-bold text-green-800" id="activeTunnels">{{ tunnels|length }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 新建隧道 -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <h2 class="text-xl font-semibold mb-4">创建新隧道</h2>
+                <form id="newTunnelForm" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">本地端口</label>
+                        <input type="number" name="localPort" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">公网端口</label>
+                        <input type="number" name="publicPort" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">自定义域名 (可选)</label>
+                        <input type="text" name="customDomain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="example.com">
+                    </div>
+                    <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                        创建隧道
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 隧道列表 -->
+        <div class="mt-8 bg-white rounded-lg shadow">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-xl font-semibold">活动隧道</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                客户端ID
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                本地端口
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                公网端口
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                自定义域名
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                创建时间
+                            </th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                操作
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200" id="tunnelsList">
+                        {% for client_id, tunnel in tunnels.items() %}
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ client_id }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ tunnel.local_port }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ tunnel.public_port }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ tunnel.custom_domain if tunnel.custom_domain else '-' }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                {{ tunnel.created_at }}
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm">
+                                <button onclick="deleteTunnel('{{ client_id }}')" 
+                                        class="text-red-600 hover:text-red-900">
+                                    删除
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 创建新隧道
+        document.getElementById('newTunnelForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            try {
+                const response = await fetch('/api/tunnels', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        local_port: parseInt(formData.get('localPort')),
+                        public_port: parseInt(formData.get('publicPort')),
+                        custom_domain: formData.get('customDomain') || null
+                    })
+                });
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('创建隧道失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('创建隧道失败');
+            }
+        });
+
+        // 删除隧道
+        async function deleteTunnel(clientId) {
+            if (!confirm('确定要删除这个隧道吗？')) return;
+            
+            try {
+                const response = await fetch(`/api/tunnels/${clientId}`, {
+                    method: 'DELETE'
+                });
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('删除隧道失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('删除隧道失败');
+            }
+        }
+
+        // 定期更新状态
+        setInterval(async () => {
+            try {
+                const response = await fetch('/api/tunnels');
+                const tunnels = await response.json();
+                document.getElementById('activeTunnels').textContent = Object.keys(tunnels).length;
+            } catch (error) {
+                console.error('Error updating status:', error);
+            }
+        }, 5000);
+    </script>
+</body>
+</html>
