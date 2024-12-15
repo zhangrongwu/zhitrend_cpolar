@@ -143,7 +143,10 @@ def authenticate_user(username: str, password: str):
     return user
 
 def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except:
+        return False
 
 def get_password_hash(password):
     return pwd_context.hash(password)
@@ -232,8 +235,12 @@ async def get_login_page(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
 @app.get("/admin", response_class=HTMLResponse)
-async def get_admin_panel(request: Request, token: str = Depends(oauth2_scheme)):
+async def get_admin_panel(request: Request, token: str | None = None):
     try:
+        # 从查询参数获取token
+        if not token:
+            return RedirectResponse(url="/login")
+            
         # 验证token
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
@@ -248,9 +255,9 @@ async def get_admin_panel(request: Request, token: str = Depends(oauth2_scheme))
             "admin.html",
             {
                 "request": request,
+                "username": username,
                 "active_connections": len(manager.active_connections),
-                "tunnels": manager.tunnels,
-                "username": username
+                "tunnels": manager.tunnels
             }
         )
     except JWTError:
@@ -328,5 +335,7 @@ if __name__ == "__main__":
         "server:app",
         host=os.getenv("SERVER_HOST", "0.0.0.0"),
         port=int(os.getenv("SERVER_PORT", 8080)),
-        reload=True
+        reload=True,  # 启用热重载
+        reload_dirs=["templates", "."],  # 监视这些目录的变化
+        reload_delay=0.25  # 重载延迟，防止过于频繁
     )

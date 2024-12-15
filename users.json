@@ -1,7 +1,7 @@
 {
     "admin": {
         "username": "admin",
-        "hashed_password": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewKxcQw/IIXI79Ni",
+        "hashed_password": "$2b$12$7q8y8atmQ6B6EL2lKaFV.uxraMErxadl/auV8bv2W3Gkl6ltKyTRC",
         "disabled": false
     }
 }

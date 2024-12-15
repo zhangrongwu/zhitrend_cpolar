@@ -110,7 +110,7 @@
                     // 保存完整的token字符串
                     localStorage.setItem('token', data.access_token);
                     // 直接跳转到管理页面
-                    window.location.href = '/admin';
+                    window.location.href = '/admin?token=' + data.access_token;
                 } else {
                     const error = await response.json();
                     console.error('Login error:', error);  // 调试日志

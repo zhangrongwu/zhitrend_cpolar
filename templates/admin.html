@@ -35,18 +35,18 @@
             <!-- 新建隧道 -->
             <div class="bg-white rounded-lg shadow p-6">
                 <h2 class="text-xl font-semibold mb-4">创建新隧道</h2>
-                <form id="newTunnelForm" class="space-y-4">
+                <form id="tunnel-form" class="space-y-4">
                     <div>
                         <label class="block text-sm font-medium text-gray-700">本地端口</label>
-                        <input type="number" name="localPort" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="number" id="local_port" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">公网端口</label>
-                        <input type="number" name="publicPort" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="number" id="public_port" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700">自定义域名 (可选)</label>
-                        <input type="text" name="customDomain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="example.com">
+                        <input type="text" id="custom_domain" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="example.com">
                     </div>
                     <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
                         创建隧道
@@ -117,23 +117,85 @@
     </div>
 
     <script>
-        // 检查登录状态
-        function checkAuth() {
-            const token = localStorage.getItem('token');
-            if (!token) {
-                window.location.href = '/login';
-            }
-            return token;
+        // 获取token
+        const token = new URLSearchParams(window.location.search).get('token');
+        if (!token) {
+            window.location.href = '/login';
         }
 
+        // 保存token到localStorage
+        localStorage.setItem('token', token);
+
         // 添加认证头
-        function getAuthHeaders() {
-            const token = checkAuth();
-            return {
-                'Authorization': `Bearer ${token}`,
-                'Content-Type': 'application/json',
-                'accept': 'application/json'
+        const headers = {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+        };
+
+        // 获取隧道列表
+        async function fetchTunnels() {
+            try {
+                const response = await fetch('/api/tunnels', {
+                    headers: headers
+                });
+                if (response.ok) {
+                    const tunnels = await response.json();
+                    updateTunnelList(tunnels);
+                } else {
+                    console.error('Failed to fetch tunnels');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // 创建新隧道
+        async function createTunnel(event) {
+            event.preventDefault();
+            const formData = {
+                local_port: parseInt(document.getElementById('local_port').value),
+                public_port: parseInt(document.getElementById('public_port').value),
+                custom_domain: document.getElementById('custom_domain').value || null
             };
+
+            try {
+                const response = await fetch('/api/tunnels', {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify(formData)
+                });
+
+                if (response.ok) {
+                    fetchTunnels();
+                    document.getElementById('tunnel-form').reset();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || '创建隧道失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('创建隧道失败');
+            }
+        }
+
+        // 删除隧道
+        async function deleteTunnel(clientId) {
+            try {
+                const response = await fetch(`/api/tunnels/${clientId}`, {
+                    method: 'DELETE',
+                    headers: headers
+                });
+
+                if (response.ok) {
+                    fetchTunnels();
+                } else {
+                    const error = await response.json();
+                    alert(error.detail || '删除隧道失败');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('删除隧道失败');
+            }
         }
 
         // 退出登录
@@ -142,78 +204,11 @@
             window.location.href = '/login';
         }
 
-        // 创建新隧道
-        document.getElementById('newTunnelForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const formData = new FormData(e.target);
-            try {
-                const response = await fetch('/api/tunnels', {
-                    method: 'POST',
-                    headers: getAuthHeaders(),
-                    body: JSON.stringify({
-                        local_port: parseInt(formData.get('localPort')),
-                        public_port: parseInt(formData.get('publicPort')),
-                        custom_domain: formData.get('customDomain') || null
-                    })
-                });
-                if (response.ok) {
-                    location.reload();
-                } else {
-                    if (response.status === 401) {
-                        window.location.href = '/login';
-                    } else {
-                        alert('创建隧道失败');
-                    }
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('创建隧道失败');
-            }
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            fetchTunnels();
+            document.getElementById('tunnel-form').addEventListener('submit', createTunnel);
         });
-
-        // 删除隧道
-        async function deleteTunnel(clientId) {
-            if (!confirm('确定要删除这个隧道吗？')) return;
-            
-            try {
-                const response = await fetch(`/api/tunnels/${clientId}`, {
-                    method: 'DELETE',
-                    headers: getAuthHeaders()
-                });
-                if (response.ok) {
-                    location.reload();
-                } else {
-                    if (response.status === 401) {
-                        window.location.href = '/login';
-                    } else {
-                        alert('删除隧道失败');
-                    }
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('删除隧道失败');
-            }
-        }
-
-        // 定期更新状态
-        setInterval(async () => {
-            try {
-                const response = await fetch('/api/tunnels', {
-                    headers: getAuthHeaders()
-                });
-                if (response.ok) {
-                    const tunnels = await response.json();
-                    document.getElementById('activeTunnels').textContent = Object.keys(tunnels).length;
-                } else if (response.status === 401) {
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.error('Error updating status:', error);
-            }
-        }, 5000);
-
-        // 初始检查认证
-        checkAuth();
     </script>
 </body>
 </html>
